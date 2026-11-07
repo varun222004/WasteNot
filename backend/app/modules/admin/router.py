@@ -10,6 +10,7 @@ from app.db.mongo import db
 from app.db.utils import out, utcnow
 from app.modules.listings.service import present_listings
 from app.modules.organizations.router import private_org
+from app.modules.reports.router import TARGETS
 from app.modules.reservations.service import release_pending_for_listing, resolve_dispute
 from app.modules.users.service import user_summaries
 from app.services.notifications import log_moderation, notify
@@ -53,7 +54,15 @@ async def overview():
 async def reports(status: str = "open"):
     rows = await db.reports.find({"status": status}).sort([("priority", 1), ("created_at", -1)]).to_list(200)
     people = await user_summaries({r["reporter_id"] for r in rows})
-    return [{**out(r), "reporter": people.get(r["reporter_id"])} for r in rows]
+    result = []
+    for r in rows:
+        target = await db[TARGETS[r["target_type"]]].find_one({"_id": r["target_id"]})
+        name = (target or {}).get("title") or (target or {}).get("name") or (target or {}).get("display_name") or "(deleted)"
+        owner_id = (target or {}).get("owner_id")
+        owner = (await user_summaries({owner_id})).get(owner_id) if owner_id else None
+        result.append({**out(r), "reporter": people.get(r["reporter_id"]), "target_label": name,
+                       "target_owner": owner["display_name"] if owner else None})
+    return result
 
 
 async def _suspend(user_id: str, admin: dict, days: int | None, note: str) -> None:

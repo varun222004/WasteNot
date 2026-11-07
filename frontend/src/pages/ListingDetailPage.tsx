@@ -86,6 +86,13 @@ function OwnerActions({ l }: { l: Listing }) {
   const msgs = { close: "No new reservations will be accepted. Already accepted reservations stay valid.", remove: "This hides the listing permanently.", complete: "Mark this listing as fully given away." };
   return (
     <div className="space-y-3" data-testid="owner-actions">
+      {(l.private_location?.address || l.private_location?.instructions) && (
+        <div className="rounded-xl2 border border-line p-4 text-sm" data-testid="owner-private-pickup">
+          <div className="font-medium">Private pickup details (shared only after you accept)</div>
+          {l.private_location.address && <div className="mt-1">{l.private_location.address}</div>}
+          {l.private_location.instructions && <div className="mt-1 text-muted">{l.private_location.instructions}</div>}
+        </div>
+      )}
       <div className="rounded-xl2 bg-soft/70 p-4 text-sm">
         <div className="font-medium">Inventory</div>
         <div className="mt-1 text-muted" data-testid="inventory-summary">{l.available} available · {l.reserved} reserved · {l.collected} collected · {l.quantity_total} total</div>
@@ -123,7 +130,7 @@ export default function ListingDetailPage() {
     qc.invalidateQueries({ queryKey: ["listing", id] });
     qc.invalidateQueries({ queryKey: ["me"] });
   });
-  const canReserve = l.status === "active" && l.available > 0 && !l.is_owner;
+  const canReserve = l.status === "active" && l.available > 0 && !l.is_owner && !l.blocked;
   return (
     <div className="container-page py-8 md:py-12">
       <div className="grid gap-10 md:grid-cols-[1.1fr_1fr] lg:gap-16">
@@ -156,7 +163,7 @@ export default function ListingDetailPage() {
                 ) : null}
                 <div className="flex flex-wrap gap-2">
                   <Button size="lg" disabled={!canReserve} onClick={() => guard(() => setReserving(true))} data-testid="reserve-btn">
-                    {canReserve ? "Reserve" : l.available === 0 ? "All reserved" : "Not available"}
+                    {canReserve ? "Reserve" : l.blocked ? "Unavailable to you" : l.available === 0 ? "All reserved" : "Not available"}
                   </Button>
                   <Button size="lg" variant="secondary" onClick={toggleSave} data-testid="save-listing-btn" aria-pressed={l.is_saved}>
                     <Bookmark className={cn("h-4 w-4", l.is_saved && "fill-olive")} />{l.is_saved ? "Saved" : "Save"}

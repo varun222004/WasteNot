@@ -69,6 +69,7 @@ export type Listing = {
   distance_km?: number;
   is_saved: boolean;
   is_owner: boolean;
+  blocked?: boolean;
   my_reservations?: { id: string; status: string; quantity: number }[];
 };
 

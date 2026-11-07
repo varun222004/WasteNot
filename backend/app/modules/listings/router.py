@@ -9,6 +9,7 @@ from app.modules.listings.schemas import ListingCreate, ListingUpdate
 from app.modules.listings.service import (approximate, build_listing_doc, present_listings, search_filter,
                                           validate_window)
 from app.modules.reservations.service import release_pending_for_listing
+from app.services.safety import is_blocked_between
 
 router = APIRouter(prefix="/listings", tags=["listings"])
 
@@ -66,6 +67,7 @@ async def detail(listing_id: str, viewer: dict | None = Depends(get_optional_use
         mine = await db.reservations.find({"listing_id": listing_id, "requester_id": viewer["_id"],
                                            "status": {"$in": ["requested", "accepted", "disputed"]}}).to_list(10)
         item["my_reservations"] = [{"id": r["_id"], "status": r["status"], "quantity": r["quantity"]} for r in mine]
+        item["blocked"] = viewer["_id"] != doc["owner_id"] and await is_blocked_between(viewer["_id"], doc["owner_id"])
     return item
 
 

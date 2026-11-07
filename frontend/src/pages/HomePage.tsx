@@ -14,7 +14,7 @@ import { AreaPicker } from "@/features/listings/AreaPicker";
 function Hero() {
   const { user } = useAuth();
   return (
-    <section className="container-page grid items-center gap-10 pb-16 pt-10 md:grid-cols-[1.05fr_1fr] md:pt-16 lg:gap-16">
+    <section className="container-page grid items-center gap-10 pb-6 pt-8 md:grid-cols-[1.05fr_1fr] md:pt-16 lg:gap-16">
       <div className="animate-rise">
         <p className="eyebrow">Bengaluru · Free, always</p>
         <h1 className="mt-5 text-5xl leading-[1.04] text-olive sm:text-6xl lg:text-7xl" data-testid="hero-heading">
@@ -29,7 +29,7 @@ function Hero() {
         </div>
       </div>
       <div className="relative animate-rise [animation-delay:120ms]">
-        <img src="/images/hero.jpg" alt="A basket of fresh produce on a wooden table" className="aspect-[4/5] w-full rounded-[28px] object-cover sm:aspect-[5/4] md:aspect-[4/5]" />
+        <img src="/images/hero.jpg" alt="A basket of fresh produce on a wooden table" className="aspect-[4/3] w-full rounded-[28px] object-cover sm:aspect-[5/4] md:aspect-[4/5]" />
         <div className="absolute -bottom-6 left-4 right-auto max-w-[260px] rounded-xl2 border border-line bg-cream p-4 sm:left-[-28px]">
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-full bg-sage-100 text-olive"><PackageCheck className="h-5 w-5" /></span>
@@ -49,7 +49,7 @@ function Neighbourhood() {
     queryFn: () => listingsApi.search({ lat: area?.lat, lng: area?.lng, radius_km: 25, category, limit: 6 }),
   });
   return (
-    <section className="container-page py-16" data-testid="neighbourhood-section">
+    <section className="container-page pb-16 pt-14 md:pt-20" data-testid="neighbourhood-section">
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div>
           <p className="eyebrow">In your neighbourhood</p>

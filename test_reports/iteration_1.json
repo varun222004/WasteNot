@@ -1,0 +1,41 @@
+{
+  "summary": "First full test of WasteNot. Backend: the bundled pytest suite failed at first (10/15) because of a problem in the test setup, not the app. I fixed it by adding tests/__init__.py and now 15/15 pass. I also wrote a new live suite against the public URL (tests/live/test_live_api.py, 13 tests) and all 13 pass. It covers OTP auth (cookies, invalid code, 6th attempt gives 429, 30s cooldown, logout), private_location never shown to non-owners, food rules, the reservation lifecycle with inventory math, decline/cancel releasing stock, self-reservation blocked, messaging access (3rd user gets 404), blocking (403), wanted offers, report plus admin removal, org verification with auto-accept and completion, and notifications read-all. Frontend: I tested these flows end to end in Playwright with separate browser contexts per user. Login with the dev OTP (invalid code shows 'Incorrect code. 4 attempts left'), profile setup, listing create with JPEG+PNG+WebP photos, owner inventory summary, edit, close/reopen, appearing in /discover, and private address hidden from anonymous visitors. Food: missing declarations and a past safe-until are both rejected; a valid cooked-food listing shows the Food details panel. Two-user reservation: request, inventory 1 available/1 reserved, accept from Me > Requests for my items, pickup details and Message button for the receiver, chat with header unread badge, 3rd user sees 'Conversation not found', both confirm, completed, listing stays active. Also passed: wanted request > offer > accept (reservation accepted, request fulfilled); org register with proof > pending > admin verify in /admin?tab=organizations > 'publish as org' checkbox > auto-accepted reservation > 'Mark collected' completes; report listing toast > admin 'Remove listing' (listing then 404); block from the profile page; notifications 'mark all read' clears the header count; all admin tabs render. Home hero, neighbourhood and impact sections render. At 390px there is no horizontal overflow and the bottom nav shows. No Emergent branding is visible. Only minor UX issues found.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "tests (pytest harness)", "issue": "Original suite failed with 'Cannot use AsyncMongoClient in different event loop'. RCA: test files import `tests.conftest` while pytest loads it as `conftest` (no tests/__init__.py). That gave two module copies, two TestClients and two event loops against one global AsyncMongoClient. Fixed by adding /app/backend/tests/__init__.py."},
+      {"endpoint": "POST /api/v1/organizations", "issue": "There is no way for a user to delete or withdraw an organization registration. TEST_ orgs created during testing stay verified."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "useRequireAuth (hooks/useAuth.tsx)", "issue": "The guard ignores the `loading` state. If a signed-in user clicks a guarded button (e.g. 'Post a request' on /wanted, Report, Reserve) before the /users/me query resolves, they are sent to /login. Reproduced on /wanted right after page load.", "selector": "[data-testid='new-request-btn']", "priority": "MEDIUM"},
+      {"component": "ListingDetailPage reserve button", "issue": "A user blocked by the giver still sees an enabled Reserve button. The backend correctly rejects with 403 'You can't interact with this member', but only after they fill in the modal.", "selector": "[data-testid='reserve-btn']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Admin > Reports", "issues": ["Report rows show only reason, type, details and reporter, not the reported listing's title or owner. Admins must click 'view' to know what they are moderating."]},
+      {"screen": "Listing detail (owner view)", "issues": ["The owner does not see their own private pickup address or instructions on the detail page (the API returns private_location to the owner). Worth showing so the giver can check what will be revealed."]},
+      {"screen": "Home (mobile 390px)", "issues": ["Large empty vertical gap between the hero image card and the 'In your neighbourhood' section."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_auth.py", "/app/backend/tests/test_exchange.py", "/app/backend/tests/live/test_live_api.py", "/app/test_reports/pytest/pytest_results.xml", "/app/test_reports/pytest/live_results.xml"],
+  "action_items": [
+    "In useRequireAuth, wait for auth `loading` to finish (or disable guarded buttons while loading) so signed-in users are not sent to /login",
+    "Disable or explain the Reserve button when the viewer is blocked (use /users/{id}/is-blocked)",
+    "Show the listing title and owner in admin report rows",
+    "Optional: show the private pickup address to the owner on the listing detail page"
+  ],
+  "critical_code_review_comments": [
+    "tests/conftest.py relies on a module-level singleton TestClient; keep tests/__init__.py so `from tests.conftest import ...` resolves to the same module pytest loads",
+    "Test JWT secrets are under 32 bytes (InsecureKeyLengthWarning). Make sure production JWT_SECRET / JWT_REFRESH_SECRET are 32 bytes or more",
+    "Impact stats count test data: TEST_ exchanges from QA runs inflate the public /impact numbers. Consider excluding is_demo or test accounts, or document this"
+  ],
+  "updated_files": ["/app/backend/tests/__init__.py", "/app/backend/tests/live/__init__.py", "/app/backend/tests/live/test_live_api.py"],
+  "success_rate": {"backend": "100% (15/15 unit + 13/13 live)", "frontend": "~95% (all requested flows pass; minor UX issues)"},
+  "seed_data_creation": "Created TEST_-prefixed users (test_*@example.com), listings, wanted requests, reservations, messages, reports and two verified TEST_ organizations (TEST_ Kitchen <run>, TEST_ Food Bank 1794047594). I removed (soft-deleted) every TEST_ listing I created. Two TEST_ kettle listings are only closed, because they have accepted reservations and the API returns 409 on delete. The organizations, users and completed reservations remain because there is no delete endpoint. I did not modify any demo or seed data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "API base is REACT_APP_BACKEND_URL + /api/v1. Run unit tests with `cd /app/backend && /root/.venv/bin/python -m pytest -q tests` (excluding live: add `--ignore=tests/live`), and live tests with `pytest -q tests/live -n 0`. The admin email has a 5 codes/hour limit; this run used about 5 admin codes around 10:27-10:37 UTC. In Playwright, log in through context.request (request-otp, then verify-otp; cookies are shared with the page) and wait for [data-testid=user-menu-btn] before clicking guarded buttons. 'Mark collected' is on /reservations/:id (data-testid reservation-action-confirm), not on the org dashboard. Admin report rows are data-testid admin-report-<id>.",
+  "test_credentials": "From /app/memory/test_credentials.md: admin varshini.v2204@gmail.com, dev OTP shown on screen and returned as dev_otp. Other users: any test_*@example.com."
+}

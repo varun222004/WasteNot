@@ -34,7 +34,7 @@ function Reports({ note }: { note: string }) {
   return <List empty="No open reports">{(data ?? []).map((r) => (
     <Row key={r.id} testId={`admin-report-${r.id}`}>
       <div className="text-sm">
-        <div className="flex items-center gap-2"><Badge tone={r.priority === "high" ? "danger" : "neutral"}>{label(r.reason)}</Badge><span className="font-medium">{label(r.target_type)}</span>
+        <div className="flex items-center gap-2"><Badge tone={r.priority === "high" ? "danger" : "neutral"}>{label(r.reason)}</Badge><span className="font-medium">{label(r.target_type)}: {r.target_label}</span>{r.target_owner && <span className="text-muted">by {r.target_owner}</span>}
           {r.target_type === "listing" && <Link className="text-olive underline" to={`/listings/${r.target_id}`}>view</Link>}
           {r.target_type === "user" && <Link className="text-olive underline" to={`/u/${r.target_id}`}>view</Link>}</div>
         <div className="mt-1 text-muted">{r.details || "No details"} · by {r.reporter?.display_name} · {formatDateTime(r.created_at)}</div>

@@ -36,14 +36,15 @@ export function useAuth(): AuthCtx {
 
 /** Returns a guard that sends anonymous visitors to sign in, then back here. */
 export function useRequireAuth() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   return useCallback(
     (action: () => void) => {
       if (user) return action();
+      if (loading) return;
       navigate(`/login?next=${encodeURIComponent(location.pathname + location.search)}`);
     },
-    [user, navigate, location]
+    [user, loading, navigate, location]
   );
 }
