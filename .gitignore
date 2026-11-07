@@ -1,0 +1,28 @@
+# dependencies
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# builds
+frontend/dist/
+*.egg-info/
+
+# secrets — never commit real env files
+.env
+.env.*
+!.env.example
+
+# local uploads
+backend/uploads/
+
+# tooling / OS
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea/
+coverage/
+playwright-report/
+test-results/
+*.log
