@@ -26,3 +26,8 @@ coverage/
 playwright-report/
 test-results/
 *.log
+*.env
+credentials.json
+*.pem
+*.key
+.credentials
