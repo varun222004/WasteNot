@@ -63,6 +63,10 @@ class Settings:
                 raise RuntimeError("SMTP email must be configured in production")
             if not self.cookie_secure:
                 raise RuntimeError("COOKIE_SECURE must be true in production")
+            for name, value in (("JWT_SECRET", self.jwt_secret), ("JWT_REFRESH_SECRET", self.jwt_refresh_secret),
+                                ("OTP_PEPPER", self.otp_pepper)):
+                if len(value) < 32 or value.lower().startswith("change-me"):
+                    raise RuntimeError(f"{name} must be a random value of at least 32 characters in production")
 
 
 settings = Settings()

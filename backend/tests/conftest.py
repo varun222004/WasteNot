@@ -1,3 +1,4 @@
+import io
 import os
 import uuid
 
@@ -19,7 +20,16 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from app.main import app  # noqa: E402
 
-PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
+
+
+def _tiny_png() -> bytes:
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (32, 32), (30, 90, 50)).save(buf, "PNG")
+    return buf.getvalue()
+
+
+PNG = _tiny_png()  # a real, decodable image (uploads are re-encoded and must decode)
 _client: TestClient | None = None
 
 

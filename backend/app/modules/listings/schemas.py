@@ -1,6 +1,7 @@
 from datetime import date, datetime
 from typing import Literal
 
+from app.core.types import AwareDatetime
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -14,9 +15,9 @@ class FoodDeclaration(BaseModel):
 
 class FoodInfo(BaseModel):
     food_type: Literal["cooked", "packaged"]
-    prepared_at: datetime | None = None
+    prepared_at: AwareDatetime | None = None
     best_before: date | None = None
-    safe_until: datetime
+    safe_until: AwareDatetime
     diet: Literal["veg", "non_veg", "egg"]
     allergen_status: Literal["known", "none_declared", "unknown"]
     allergens: list[str] = Field(default_factory=list, max_length=14)
@@ -44,9 +45,9 @@ class ListingCreate(BaseModel):
     condition: Literal["new", "like_new", "good", "fair"] | None = None
     photo_ids: list[str] = Field(min_length=1, max_length=5)
     location: LocationIn
-    pickup_window_start: datetime | None = None
-    pickup_window_end: datetime | None = None
-    expires_at: datetime | None = None
+    pickup_window_start: AwareDatetime | None = None
+    pickup_window_end: AwareDatetime | None = None
+    expires_at: AwareDatetime | None = None
     food: FoodInfo | None = None
     as_organization: bool = False
 
@@ -64,6 +65,6 @@ class ListingUpdate(BaseModel):
     condition: Literal["new", "like_new", "good", "fair"] | None = None
     photo_ids: list[str] | None = Field(default=None, min_length=1, max_length=5)
     location: LocationIn | None = None
-    pickup_window_start: datetime | None = None
-    pickup_window_end: datetime | None = None
-    expires_at: datetime | None = None
+    pickup_window_start: AwareDatetime | None = None
+    pickup_window_end: AwareDatetime | None = None
+    expires_at: AwareDatetime | None = None

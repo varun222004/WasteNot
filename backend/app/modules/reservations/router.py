@@ -1,9 +1,9 @@
-from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.core.types import AwareDatetime
 from app.core.deps import get_current_user, get_verified_user
 from app.db.mongo import db
 from app.db.utils import page_response, paginate_params
@@ -17,12 +17,12 @@ router = APIRouter(prefix="/reservations", tags=["reservations"])
 class ReservationCreate(BaseModel):
     listing_id: str
     quantity: int = Field(default=1, ge=1, le=50)
-    pickup_time: datetime | None = None
+    pickup_time: AwareDatetime | None = None
     note: str = Field(default="", max_length=300)
 
 
 class ActionBody(BaseModel):
-    action: Literal["accept", "decline", "cancel", "confirm", "no_show", "dispute"]
+    action: Literal["accept", "decline", "cancel", "confirm", "no_show", "dispute", "contest_no_show"]
     note: str = Field(default="", max_length=500)
 
 
@@ -83,6 +83,7 @@ async def act(res_id: str, body: ActionBody, user: dict = Depends(get_current_us
         "confirm": lambda: service.confirm_collection(res, user),
         "no_show": lambda: service.report_no_show(res, user),
         "dispute": lambda: service.open_dispute(res, user, body.note or "No reason given"),
+        "contest_no_show": lambda: service.contest_no_show(res, user, body.note or "No reason given"),
     }
     updated = await handlers[body.action]()
     return await _present(updated, user)

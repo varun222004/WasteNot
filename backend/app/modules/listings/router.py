@@ -128,6 +128,10 @@ async def reopen(listing_id: str, user: dict = Depends(get_current_user)):
     doc = await _owned(listing_id, user)
     if doc["status"] != "closed" or doc["expires_at"] <= utcnow():
         raise HTTPException(status_code=409, detail="This listing can't be reopened")
+    if doc.get("org_id"):
+        org = await db.organizations.find_one({"_id": doc["org_id"]}, {"status": 1})
+        if not org or org["status"] != "verified":
+            raise HTTPException(status_code=403, detail="Your organization isn't verified, so this listing can't be reopened")
     await db.listings.update_one({"_id": listing_id}, {"$set": {"status": "active", "updated_at": utcnow()}})
     return {"status": "active"}
 

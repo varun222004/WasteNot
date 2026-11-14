@@ -11,9 +11,10 @@ from app.db.utils import out, utcnow
 from app.modules.listings.service import present_listings
 from app.modules.organizations.router import private_org
 from app.modules.reports.router import TARGETS
-from app.modules.reservations.service import release_pending_for_listing, resolve_dispute
+from app.modules.reservations.service import cancel_open_reservations, resolve_dispute
 from app.modules.users.service import user_summaries
 from app.services.notifications import log_moderation, notify
+from app.services.takedown import takedown_org, takedown_user
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -69,6 +70,7 @@ async def _suspend(user_id: str, admin: dict, days: int | None, note: str) -> No
     until = utcnow() + timedelta(days=days) if days else None
     await db.users.update_one({"_id": user_id}, {"$set": {"status": "suspended", "suspended_until": until}})
     await db.sessions.update_many({"user_id": user_id}, {"$set": {"revoked": True}})
+    await takedown_user(user_id)
     await log_moderation(admin["_id"], "suspend_user", "user", user_id, note)
 
 
@@ -76,10 +78,18 @@ async def _remove_listing(listing_id: str, admin: dict, note: str) -> None:
     listing = await db.listings.find_one({"_id": listing_id})
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
-    await release_pending_for_listing(listing_id, "declined", "The listing was removed by moderators")
+    await cancel_open_reservations({"listing_id": listing_id}, "The listing was removed by moderators")
     await db.listings.update_one({"_id": listing_id}, {"$set": {"status": "removed", "removed_reason": note}})
     await log_moderation(admin["_id"], "remove_listing", "listing", listing_id, note)
     await notify(listing["owner_id"], "moderation", "A listing was removed", note or listing["title"])
+
+
+async def _target_user_id(rep: dict) -> str | None:
+    """The member behind a report: the user itself, or the owner of the reported listing/org/request."""
+    if rep["target_type"] == "user":
+        return rep["target_id"]
+    doc = await db[TARGETS[rep["target_type"]]].find_one({"_id": rep["target_id"]}, {"owner_id": 1})
+    return (doc or {}).get("owner_id")
 
 
 @router.post("/reports/{report_id}/resolve")
@@ -87,16 +97,23 @@ async def resolve_report(report_id: str, body: ReportResolve, admin: dict = Depe
     rep = await db.reports.find_one({"_id": report_id})
     if not rep:
         raise HTTPException(status_code=404, detail="Report not found")
-    if body.action == "remove_listing":
+    if body.action == "warn":
+        target_user = await _target_user_id(rep)
+        if not target_user:
+            raise HTTPException(status_code=404, detail="The reported item no longer exists, so there is nobody to warn")
+        await notify(target_user, "moderation", "A moderator sent you a warning",
+                     body.note or "Please review the community guidelines.")
+        await log_moderation(admin["_id"], "warn_user", "user", target_user, body.note)
+    elif body.action == "remove_listing":
         if rep["target_type"] != "listing":
             raise HTTPException(status_code=422, detail="This report is not about a listing")
         await _remove_listing(rep["target_id"], admin, body.note)
     elif body.action == "suspend_user":
-        target = rep["target_id"]
-        if rep["target_type"] == "listing":
-            target = (await db.listings.find_one({"_id": target}))["owner_id"]
-        elif rep["target_type"] != "user":
+        if rep["target_type"] not in ("listing", "user"):
             raise HTTPException(status_code=422, detail="Suspend from the member or listing report")
+        target = await _target_user_id(rep)
+        if not target:
+            raise HTTPException(status_code=404, detail="The reported item no longer exists")
         await _suspend(target, admin, None, body.note)
     await db.reports.update_one({"_id": report_id}, {"$set": {"status": "resolved", "resolution": {
         "action": body.action, "note": body.note, "by": admin["_id"], "at": utcnow()}}})
@@ -118,9 +135,8 @@ async def review_org(org_id: str, body: OrgReview, admin: dict = Depends(require
         raise HTTPException(status_code=404, detail="Organization not found")
     await db.organizations.update_one({"_id": org_id}, {"$set": {"status": body.status, "review_note": body.note,
                                                                   "reviewed_by": admin["_id"], "reviewed_at": utcnow()}})
-    if body.status in ("suspended", "rejected"):
-        for l in await db.listings.find({"org_id": org_id, "status": "active"}, {"_id": 1}).to_list(None):
-            await db.listings.update_one({"_id": l["_id"]}, {"$set": {"status": "closed"}})
+    if body.status != "verified":
+        await takedown_org(org_id)
     await log_moderation(admin["_id"], f"org_{body.status}", "organization", org_id, body.note)
     await notify(org["owner_id"], "org_verification", f"Organization {body.status}", body.note or org["name"], "/org")
     return {"status": body.status}
@@ -192,3 +208,13 @@ async def resolve(res_id: str, body: DisputeResolve, admin: dict = Depends(requi
 @router.get("/moderation-actions")
 async def moderation_actions():
     return [out(r) for r in await db.moderation_actions.find().sort("created_at", -1).to_list(100)]
+
+
+@router.get("/no-show-contests")
+async def no_show_contests():
+    rows = await db.reservations.find({"no_show_contested_at": {"$ne": None}}).sort("no_show_contested_at", -1).to_list(100)
+    people = await user_summaries({p for r in rows for p in (r["owner_id"], r["requester_id"])})
+    titles = {l["_id"]: l["title"] for l in await db.listings.find({"_id": {"$in": [r["listing_id"] for r in rows]}}).to_list(None)}
+    return [{"id": r["_id"], "listing_title": titles.get(r["listing_id"]), "reason": r.get("no_show_contest_reason"),
+             "contested_at": r["no_show_contested_at"], "owner": people.get(r["owner_id"]),
+             "requester": people.get(r["requester_id"])} for r in rows]
