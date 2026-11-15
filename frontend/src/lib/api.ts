@@ -1,4 +1,4 @@
-const BASE = (import.meta.env.VITE_API_URL || import.meta.env.REACT_APP_BACKEND_URL || "").replace(/\/$/, "");
+const BASE = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
 export const API_ROOT = `${BASE}/api/v1`;
 
 export class ApiError extends Error {

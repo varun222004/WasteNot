@@ -18,6 +18,7 @@ OTP_TTL = timedelta(minutes=10)
 MAX_ATTEMPTS = 5
 MAX_SENDS_PER_HOUR = 5
 RESEND_COOLDOWN = timedelta(seconds=30)
+REUSE_GRACE = timedelta(seconds=10)  # two tabs refreshing at once must not look like token theft
 
 
 class OtpRequest(BaseModel):
@@ -90,11 +91,15 @@ async def verify_otp(body: OtpVerify, request: Request, response: Response):
         raise HTTPException(status_code=400, detail="Request a new code")
     if rec["expires_at"] <= now:
         raise HTTPException(status_code=400, detail="This code has expired. Request a new one")
-    if rec["attempts"] >= MAX_ATTEMPTS:
+    # Count the attempt and check the limit in ONE atomic step, so parallel guesses can't exceed MAX_ATTEMPTS.
+    rec = await db.otp_records.find_one_and_update(
+        {"_id": rec["_id"], "attempts": {"$lt": MAX_ATTEMPTS}}, {"$inc": {"attempts": 1}}, return_document=True)
+    if not rec:
         raise HTTPException(status_code=429, detail="Too many attempts. Request a new code")
-    await db.otp_records.update_one({"_id": rec["_id"]}, {"$inc": {"attempts": 1}})
+    if not rec.get("code_hash"):
+        raise HTTPException(status_code=400, detail="Request a new code")
     if not safe_equals(rec["code_hash"], digest(f"{email}:{body.code}")):
-        left = MAX_ATTEMPTS - rec["attempts"] - 1
+        left = MAX_ATTEMPTS - rec["attempts"]
         raise HTTPException(status_code=400, detail=f"Incorrect code. {max(left, 0)} attempts left")
     # Consume atomically so a code can only be used once.
     consumed = await db.otp_records.update_one({"_id": rec["_id"], "code_hash": rec["code_hash"]},
@@ -130,11 +135,26 @@ async def refresh(request: Request, response: Response):
     if not token:
         raise HTTPException(status_code=401, detail="No session")
     payload = decode_token(token, "refresh")
-    session = await db.sessions.find_one({"jti": payload["jti"], "revoked": False})
+    session = await db.sessions.find_one({"jti": payload["jti"]})
     if not session or not safe_equals(session["token_hash"], digest(token)):
         _clear_cookies(response)
         raise HTTPException(status_code=401, detail="Session expired")
-    await db.sessions.update_one({"_id": session["_id"]}, {"$set": {"revoked": True}})
+    if session["revoked"]:
+        rotated = session.get("rotated_at")
+        if rotated and utcnow() - rotated > REUSE_GRACE:
+            # An already-rotated token is being replayed well after rotation: assume it was stolen, end every session.
+            await db.sessions.update_many({"user_id": session["user_id"]}, {"$set": {"revoked": True}})
+        _clear_cookies(response)
+        raise HTTPException(status_code=401, detail="Session expired")
+    claimed = await db.sessions.find_one_and_update(
+        {"_id": session["_id"], "revoked": False}, {"$set": {"revoked": True, "rotated_at": utcnow()}})
+    if not claimed:  # a concurrent refresh with the same token won the race
+        _clear_cookies(response)
+        raise HTTPException(status_code=401, detail="Session expired")
+    account = await db.users.find_one({"_id": payload["sub"]}, {"status": 1})
+    if not account or account.get("status") == "suspended":
+        _clear_cookies(response)
+        raise HTTPException(status_code=401, detail="Session expired")
     await _issue_session(payload["sub"], request, response)
     return {"ok": True}
 

@@ -11,7 +11,7 @@ from fastapi import HTTPException
 from app.db.mongo import db
 from app.db.utils import new_id, utcnow
 from app.services.notifications import notify
-from app.services.safety import ensure_not_blocked, ensure_not_restricted
+from app.services.safety import account_usable, ensure_not_blocked, ensure_not_restricted
 
 ACTIVE = ["requested", "accepted", "disputed"]
 MAX_ACTIVE_PER_USER = 3
@@ -20,6 +20,10 @@ ITEM_RESPONSE = timedelta(hours=24)
 FREE_CANCEL_BEFORE = timedelta(hours=1)
 UNCONFIRMED_AFTER = timedelta(hours=48)
 NO_SHOW_LIMIT, NO_SHOW_WINDOW, RESTRICTION = 3, timedelta(days=30), timedelta(days=7)
+NO_SHOW_GRACE = timedelta(minutes=30)          # after the agreed pickup time
+NO_SHOW_WAIT_FOOD = timedelta(hours=2)         # when no pickup time was set
+NO_SHOW_WAIT_ITEM = timedelta(hours=24)
+NO_SHOW_CONTEST_WINDOW = timedelta(hours=72)
 
 
 def _event(res: dict, kind: str, by: str | None, note: str = "") -> dict:
@@ -64,6 +68,10 @@ async def create_reservation(user: dict, listing_id: str, quantity: int, pickup_
     if listing["owner_id"] == user["_id"]:
         raise HTTPException(status_code=400, detail="You can't reserve your own listing")
     await ensure_not_blocked(user["_id"], listing["owner_id"])
+    owner = await db.users.find_one({"_id": listing["owner_id"]}, {"status": 1, "suspended_until": 1})
+    org = await db.organizations.find_one({"_id": listing["org_id"]}, {"status": 1}) if listing.get("org_id") else None
+    if not account_usable(owner) or (listing.get("org_id") and (not org or org["status"] != "verified")):
+        raise HTTPException(status_code=409, detail="This listing is no longer available")
     start, end = listing.get("pickup_window_start"), listing.get("pickup_window_end")
     if listing["mode"] == "food":
         if listing["food"]["safe_until"] <= now or (end and end <= now):
@@ -105,6 +113,13 @@ async def create_reservation(user: dict, listing_id: str, quantity: int, pickup_
                    ([{"kind": "accepted", "by": None, "note": "automatic", "at": now}] if accept else []),
     }
     await db.reservations.insert_one(res)
+    # The checks above can be raced by parallel requests, so verify the limits again now that this row exists.
+    # If we are over, undo our own claim. (Under a true tie both parallel requests back off, which is safe.)
+    problem = await _over_limits(res, user, limit)
+    if problem:
+        await db.reservations.delete_one({"_id": res["_id"]})
+        await _release(res)
+        raise HTTPException(status_code=409, detail=problem)
     title = listing["title"]
     if accept:
         await open_conversation(res)
@@ -115,6 +130,17 @@ async def create_reservation(user: dict, listing_id: str, quantity: int, pickup_
         await notify(listing["owner_id"], "reservation_requested", "New reservation request", title,
                      f"/reservations/{res['_id']}")
     return res
+
+
+async def _over_limits(res: dict, user: dict, per_listing_limit: int) -> str | None:
+    active = await db.reservations.count_documents({"requester_id": user["_id"], "status": {"$in": ACTIVE}})
+    if active > MAX_ACTIVE_PER_USER and user.get("role") != "org":
+        return "You can hold up to 3 active reservations at a time"
+    held = sum(r["quantity"] for r in await db.reservations.find(
+        {"listing_id": res["listing_id"], "requester_id": user["_id"], "status": {"$in": ACTIVE}}).to_list(None))
+    if held > per_listing_limit:
+        return f"You can reserve up to {per_listing_limit} of this item"
+    return None
 
 
 async def accept(res: dict, user: dict) -> dict:
@@ -198,22 +224,64 @@ async def confirm_collection(res: dict, user: dict) -> dict:
     return updated
 
 
+async def _no_show_earliest(res: dict) -> datetime:
+    """Earliest moment a giver may call a no-show: after pickup (plus grace), after the collection window,
+    or - when no time was agreed - after a fixed wait from acceptance."""
+    if res.get("pickup_time"):
+        earliest = res["pickup_time"] + NO_SHOW_GRACE
+    else:
+        base = res.get("accepted_at") or res["created_at"]
+        earliest = base + (NO_SHOW_WAIT_FOOD if res.get("is_food") else NO_SHOW_WAIT_ITEM)
+    listing = await db.listings.find_one({"_id": res["listing_id"]}, {"pickup_window_end": 1})
+    window_end = (listing or {}).get("pickup_window_end")
+    return max(earliest, window_end) if window_end else earliest
+
+
+async def _recent_no_shows(requester_id: str) -> int:
+    return await db.reservations.count_documents({
+        "requester_id": requester_id, "status": "no_show", "no_show_contested_at": None,
+        "updated_at": {"$gte": utcnow() - NO_SHOW_WINDOW}})
+
+
 async def report_no_show(res: dict, user: dict) -> dict:
     _owner_only(res, user)
-    if res.get("pickup_time") and res["pickup_time"] > utcnow():
-        raise HTTPException(status_code=409, detail="You can report a no-show after the pickup time")
+    earliest = await _no_show_earliest(res)
+    if earliest > utcnow():
+        raise HTTPException(status_code=409, detail=f"You can report a no-show after {earliest:%d %b %H:%M} UTC")
     res = await _transition(res, ["accepted"], "no_show", user["_id"])
     await _release(res)
     await _set_conversation_read_only(res["_id"])
-    since = utcnow() - NO_SHOW_WINDOW
-    count = await db.reservations.count_documents({"requester_id": res["requester_id"], "status": "no_show",
-                                                   "updated_at": {"$gte": since}})
-    if count >= NO_SHOW_LIMIT:
+    if await _recent_no_shows(res["requester_id"]) >= NO_SHOW_LIMIT:
         await db.users.update_one({"_id": res["requester_id"]}, {"$set": {"restricted_until": utcnow() + RESTRICTION}})
         await notify(res["requester_id"], "restriction", "Reservations paused for 7 days",
-                     "Three confirmed no-shows were recorded in the last 30 days.")
-    await notify(res["requester_id"], "no_show", "A no-show was recorded", "", f"/reservations/{res['_id']}")
+                     "Three no-shows were recorded in the last 30 days. If one was a mistake, you can contest it.")
+    await notify(res["requester_id"], "no_show", "A no-show was recorded",
+                 "If this is wrong, open the reservation and contest it within 72 hours.", f"/reservations/{res['_id']}")
     return res
+
+
+async def contest_no_show(res: dict, user: dict, reason: str) -> dict:
+    if res["requester_id"] != user["_id"]:
+        raise HTTPException(status_code=403, detail="Only the receiver can contest a no-show")
+    if res["status"] != "no_show":
+        raise HTTPException(status_code=409, detail="Only a recorded no-show can be contested")
+    if utcnow() - res["updated_at"] > NO_SHOW_CONTEST_WINDOW:
+        raise HTTPException(status_code=409, detail="The 72-hour window to contest this has passed")
+    now = utcnow()
+    updated = await db.reservations.find_one_and_update(
+        {"_id": res["_id"], "status": "no_show", "no_show_contested_at": None},
+        {"$set": {"no_show_contested_at": now, "no_show_contest_reason": reason[:500]},
+         "$push": {"history": {"kind": "no_show_contested", "by": user["_id"], "note": reason[:500], "at": now}}},
+        return_document=True)
+    if not updated:
+        raise HTTPException(status_code=409, detail="This no-show was already contested")
+    # A contested no-show stops counting immediately; if that drops the user under the limit, lift the pause.
+    if await _recent_no_shows(res["requester_id"]) < NO_SHOW_LIMIT:
+        await db.users.update_one({"_id": res["requester_id"]}, {"$unset": {"restricted_until": ""}})
+    await notify(res["owner_id"], "no_show_contested", "A no-show was contested", reason[:200], f"/reservations/{res['_id']}")
+    for admin in await db.users.find({"role": "admin"}, {"_id": 1}).to_list(20):
+        await notify(admin["_id"], "no_show_contested", "A no-show was contested", reason[:200], "/admin")
+    return updated
 
 
 async def open_dispute(res: dict, user: dict, reason: str) -> dict:
@@ -233,6 +301,24 @@ async def resolve_dispute(res: dict, admin: dict, outcome: str, note: str) -> di
     await _release(res)
     await _set_conversation_read_only(res["_id"])
     return res
+
+
+async def cancel_open_reservations(flt: dict, note: str, notify_giver: bool = False) -> int:
+    """System-cancel every requested/accepted reservation matching `flt` (used by moderation takedowns)."""
+    cancelled = 0
+    for res in await db.reservations.find({**flt, "status": {"$in": ["requested", "accepted"]}}).to_list(None):
+        try:
+            res = await _transition(res, ["requested", "accepted"], "cancelled", None, note,
+                                    {"cancelled_by": None, "system_cancelled": True})
+        except HTTPException:
+            continue
+        await _release(res)
+        await _set_conversation_read_only(res["_id"])
+        await notify(res["requester_id"], "reservation_cancelled", "Reservation cancelled", note, f"/reservations/{res['_id']}")
+        if notify_giver:
+            await notify(res["owner_id"], "reservation_cancelled", "Reservation cancelled", note, f"/reservations/{res['_id']}")
+        cancelled += 1
+    return cancelled
 
 
 async def release_pending_for_listing(listing_id: str, to: str, note: str) -> None:

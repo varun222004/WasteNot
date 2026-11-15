@@ -19,3 +19,13 @@ def ensure_not_restricted(user: dict) -> None:
     if until and until > utcnow():
         raise HTTPException(status_code=403,
                             detail=f"Reservations paused until {until:%d %b %Y} after repeated no-shows")
+
+
+def account_usable(user: dict | None) -> bool:
+    """True for active accounts, and for timed suspensions that have already ended."""
+    if not user:
+        return False
+    if user.get("status", "active") == "active":
+        return True
+    until = user.get("suspended_until")
+    return user.get("status") == "suspended" and until is not None and until <= utcnow()

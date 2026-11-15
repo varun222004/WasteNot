@@ -4,16 +4,13 @@ import path from "node:path";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
-  const hmrPort = env.VITE_HMR_CLIENT_PORT || env.WDS_SOCKET_PORT;
   return {
     plugins: [react()],
-    envPrefix: ["VITE_", "REACT_APP_"],
     resolve: { alias: { "@": path.resolve(__dirname, "src") } },
     server: {
-      host: true,
       port: 5173,
-      allowedHosts: true,
-      hmr: hmrPort ? { clientPort: Number(hmrPort) } : undefined,
+      // Same-origin in dev too, so cookies behave exactly like production: /api goes to the local backend.
+      proxy: { "/api": env.VITE_DEV_API_TARGET || "http://localhost:8001" },
     },
     build: { outDir: "dist", sourcemap: false },
     test: {

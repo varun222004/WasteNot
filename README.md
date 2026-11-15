@@ -15,25 +15,23 @@ This repository is fully self-contained: a React + TypeScript web app, a FastAPI
 | `docs/development/` | Local setup, environment variables, testing, deployment, troubleshooting |
 | `.github/workflows/` | CI: API tests, type-check, unit tests, production build |
 
-> The folders are named `frontend/` and `backend/` (rather than `apps/web` and `apps/api`) so they run unchanged in the original development container. Rename them freely; nothing references the folder names except CI and these docs.
-
 ## Quick start (Windows, macOS, Linux)
 
-Prerequisites: Node 20+, Python 3.11+, and MongoDB (local install, Docker `docker run -p 27017:27017 mongo:7`, or a free MongoDB Atlas cluster).
+Prerequisites: Node 20+, Python 3.12+, and MongoDB (local install, Docker `docker run -p 27017:27017 mongo:7`, or a free MongoDB Atlas cluster).
 
 ```bash
 # API
 cd backend
 python -m venv .venv
 .venv\Scripts\activate          # Windows  (macOS/Linux: source .venv/bin/activate)
-pip install -r requirements.txt
-copy .env.example .env          # macOS/Linux: cp .env.example .env  — then fill in the secrets
+pip install -r requirements-dev.txt
+copy .env.example .env          # macOS/Linux: cp .env.example .env  — then replace the three change-me secrets
 uvicorn server:app --reload --port 8001     # or: uvicorn app.main:app --reload --port 8001
 
 # Web (new terminal)
 cd frontend
-npm install                     # or yarn
-copy .env.example .env          # VITE_API_URL=http://localhost:8001
+npm ci
+copy .env.example .env          # leave VITE_API_URL empty: vite proxies /api to http://localhost:8001
 npm run dev                     # http://localhost:5173
 ```
 
