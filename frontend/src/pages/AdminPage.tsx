@@ -42,6 +42,7 @@ function Reports({ note }: { note: string }) {
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="secondary" onClick={() => act(() => adminApi.resolveReport(r.id, "dismiss", note), "Dismissed")} data-testid="admin-report-dismiss">Dismiss</Button>
         {r.target_type === "listing" && <Button size="sm" variant="danger" onClick={() => act(() => adminApi.resolveReport(r.id, "remove_listing", note), "Listing removed")} data-testid="admin-report-remove">Remove listing</Button>}
+        {["user", "listing"].includes(r.target_type) && <Button size="sm" variant="secondary" onClick={() => act(() => adminApi.resolveReport(r.id, "warn", note), "Warning sent")} data-testid="admin-report-warn">Warn member</Button>}
         {["user", "listing"].includes(r.target_type) && <Button size="sm" variant="danger" onClick={() => act(() => adminApi.resolveReport(r.id, "suspend_user", note), "Member suspended")} data-testid="admin-report-suspend">Suspend member</Button>}
       </div>
     </Row>))}</List>;

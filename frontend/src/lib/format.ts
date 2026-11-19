@@ -44,4 +44,11 @@ export function isoToLocal(iso?: string | null): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+const HISTORY_NOTES: Record<string, string> = {
+  owner_confirmed_at: "Giver confirmed the handover",
+  requester_confirmed_at: "Receiver confirmed the handover",
+};
+/** Turns internal history notes (field names) into plain words; real notes pass through unchanged. */
+export const historyNote = (note?: string | null) => (note ? HISTORY_NOTES[note] ?? note : "");
+
 export const label = (key?: string | null) => (key ? key.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase()) : "");

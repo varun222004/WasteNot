@@ -11,6 +11,7 @@ export const authApi = {
     api<{ message: string; dev_otp?: string }>("/auth/request-otp", { method: "POST", body: { email } }),
   verifyOtp: (email: string, code: string) =>
     api<{ user: Me; is_new: boolean }>("/auth/verify-otp", { method: "POST", body: { email, code } }),
+  session: () => api<{ user: Me | null }>("/auth/session"),
   logout: () => api("/auth/logout", { method: "POST" }),
   logoutAll: () => api("/auth/logout-all", { method: "POST" }),
 };

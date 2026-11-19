@@ -1,9 +1,10 @@
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, HandHeart, MapPin, PackageCheck } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { ArrowRight, Armchair, BadgeCheck, BookOpen, Building2, CheckCheck, HandHeart, Lock, MapPin, PackageCheck, ShieldCheck, Shirt, Utensils } from "lucide-react";
 import { useState } from "react";
 import { impactApi, listingsApi } from "@/services/api";
-import { useArea } from "@/hooks/useMeta";
+import { useArea, useMeta } from "@/hooks/useMeta";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/Button";
 import { CardSkeletonGrid, EmptyState, ErrorState, Stat } from "@/components/ui/Display";
@@ -74,6 +75,19 @@ function Neighbourhood() {
 
 function ImpactBand() {
   const { data } = useQuery({ queryKey: ["impact"], queryFn: impactApi.get });
+  const started = [data?.completed_exchanges, data?.items_shared, data?.organization_meals_shared].some((n) => (n ?? 0) > 0);
+  if (!started) {
+    return (
+      <section className="bg-olive py-20 text-cream" data-testid="impact-section">
+        <div className="container-page max-w-2xl">
+          <p className="text-xs font-medium uppercase tracking-[0.14em] text-sage">Just getting started</p>
+          <h2 className="mt-3 text-3xl text-cream sm:text-4xl">Be one of the first neighbours in Bengaluru.</h2>
+          <p className="mt-4 text-sm text-sage">We only count exchanges both sides confirmed, or collections reported by verified organizations. No estimates. The first numbers will appear here.</p>
+          <Link to="/listings/new" className="mt-6 inline-block"><Button variant="secondary" data-testid="impact-give-btn">Give something</Button></Link>
+        </div>
+      </section>
+    );
+  }
   return (
     <section className="bg-olive py-20 text-cream" data-testid="impact-section">
       <div className="container-page grid gap-12 md:grid-cols-[1fr_1.4fr]">
@@ -123,6 +137,93 @@ function HowItWorks() {
   );
 }
 
+
+const CARD_COPY: Record<string, { body: string; icon: LucideIcon }> = {
+  food: { body: "Surplus meals and groceries, shared safely.", icon: Utensils },
+  books: { body: "Textbooks, novels, anything with pages.", icon: BookOpen },
+  clothes: { body: "Wearable things that still have life.", icon: Shirt },
+  household: { body: "Kitchenware, furniture, small appliances.", icon: Armchair },
+};
+
+function CategoryCards() {
+  const { data: meta } = useMeta();
+  // Built from the server's catalog so the links can never point at a category that doesn't exist, and Food is
+  // hidden whenever food sharing is switched off (same rule as the filter chips and the Give form).
+  const cats = (meta?.categories ?? [])
+    .filter((c) => c.key !== "food" || meta?.food_sharing_enabled)
+    .map((c) => ({ key: c.key, title: c.label, ...(CARD_COPY[c.key] ?? { body: "Things your neighbours are giving away.", icon: PackageCheck }) }));
+  if (!cats.length) return null;
+  return (
+    <section className="container-page pb-4 pt-2" data-testid="category-cards">
+      <p className="eyebrow">Browse by what you need</p>
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {cats.map((c) => (
+          <Link key={c.key} to={`/discover?category=${c.key}`} className="group rounded-xl2 border border-line bg-cream p-6 transition-colors hover:bg-soft" data-testid={`category-card-${c.key}`}>
+            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-sage-100 text-olive"><c.icon className="h-5 w-5" /></span>
+            <h3 className="mt-4 text-xl text-olive">{c.title}</h3>
+            <p className="mt-1 text-sm text-muted">{c.body}</p>
+            <span className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-olive">See {c.title.toLowerCase()} <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" /></span>
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function TrustSection() {
+  const points = [
+    { icon: Lock, title: "Your address stays private", body: "Neighbours see only your area. The exact pickup spot is shared after you accept." },
+    { icon: CheckCheck, title: "Both sides confirm", body: "An exchange counts only when giver and receiver both say it happened." },
+    { icon: BadgeCheck, title: "Verified organizations", body: "Cafés, caterers and community groups are checked before they get a badge." },
+    { icon: ShieldCheck, title: "Food-safety rules built in", body: "Safe-until times, allergens and storage notes are required before food goes live." },
+  ];
+  return (
+    <section className="container-page py-16" data-testid="trust-section">
+      <p className="eyebrow">Why you can trust it</p>
+      <h2 className="mt-2 max-w-xl text-3xl text-olive sm:text-4xl">Free, local and built to be safe.</h2>
+      <div className="mt-10 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
+        {points.map((p) => (
+          <div key={p.title}>
+            <p.icon className="h-6 w-6 text-walnut" />
+            <h3 className="mt-3 text-lg text-olive">{p.title}</h3>
+            <p className="mt-1 text-sm leading-relaxed text-muted">{p.body}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function OrgBand() {
+  return (
+    <section className="container-page py-16" data-testid="org-band">
+      <div className="grid items-center gap-8 rounded-xl3 border border-line bg-soft/60 p-8 md:grid-cols-[1.2fr_1fr] md:p-12">
+        <div>
+          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-sage-100 text-olive"><Building2 className="h-5 w-5" /></span>
+          <h2 className="mt-4 text-3xl text-olive sm:text-4xl">Run a café, hotel or community group?</h2>
+          <p className="mt-3 max-w-lg text-muted">Share surplus food with neighbours and NGOs. Verified organizations get a badge, their listings are accepted automatically, and every collection is counted.</p>
+        </div>
+        <div className="md:justify-self-end"><Link to="/org"><Button size="lg" data-testid="org-band-btn">Register your organization</Button></Link></div>
+      </div>
+    </section>
+  );
+}
+
+function FinalCta() {
+  const { user } = useAuth();
+  return (
+    <section className="container-page pb-4 pt-8 text-center" data-testid="final-cta">
+      <h2 className="mx-auto max-w-2xl text-4xl text-olive sm:text-5xl">Give something a second life today.</h2>
+      <div className="mt-8 flex flex-wrap justify-center gap-3">
+        <Link to="/discover"><Button size="lg" variant="secondary">Explore nearby</Button></Link>
+        <Link to={user ? "/listings/new" : "/login?next=/listings/new"}><Button size="lg">Give something</Button></Link>
+      </div>
+    </section>
+  );
+}
+
 export default function HomePage() {
-  return (<><Hero /><Neighbourhood /><ImpactBand /><HowItWorks /></>);
+  const { user, loading } = useAuth();
+  if (!loading && user) return <Navigate to="/discover" replace />; // signed-in members land straight on the feed
+  return (<><Hero /><Neighbourhood /><CategoryCards /><HowItWorks /><TrustSection /><ImpactBand /><OrgBand /><FinalCta /></>);
 }

@@ -4,13 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, EmailStr, Field
 
 from app.core.config import settings
-from app.core.deps import ACCESS_COOKIE, REFRESH_COOKIE, get_current_user
+from app.core.deps import ACCESS_COOKIE, REFRESH_COOKIE, get_current_user, get_optional_user
 from app.core.security import (create_access_token, create_refresh_token, decode_token, digest,
                                generate_otp, safe_equals)
 from app.db.mongo import db
 from app.db.utils import new_id, utcnow
 from app.modules.users.service import serialize_me
 from app.services.email import send_email
+from app.services.safety import account_usable
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -157,6 +158,28 @@ async def refresh(request: Request, response: Response):
         raise HTTPException(status_code=401, detail="Session expired")
     await _issue_session(payload["sub"], request, response)
     return {"ok": True}
+
+
+@router.get("/session")
+async def session(request: Request, response: Response, user: dict | None = Depends(get_optional_user)):
+    """Who is signed in? Always answers 200 (guests get user=null) so the browser console stays clean.
+    If only the long-lived refresh cookie is left, the session is renewed in this same call."""
+    had_cookies = bool(request.cookies.get(REFRESH_COOKIE) or request.cookies.get(ACCESS_COOKIE))
+    if user is None and request.cookies.get(REFRESH_COOKIE):
+        try:
+            sub = decode_token(request.cookies[REFRESH_COOKIE], "refresh")["sub"]
+            await refresh(request, response)
+            user = await db.users.find_one({"_id": sub})
+        except HTTPException:
+            # Expected: the token is invalid, expired, revoked or its owner is suspended (decode_token and refresh
+            # raise only HTTPException for that). Anything else, such as a database error, is NOT caught here:
+            # it surfaces as a real server error and gets logged instead of looking like a guest visit.
+            user = None
+    if user is not None and not account_usable(user):
+        user = None
+    if user is None and had_cookies:
+        _clear_cookies(response)  # nobody is signed in, so drop stale or unusable cookies
+    return {"user": await serialize_me(user) if user else None}
 
 
 @router.post("/logout")

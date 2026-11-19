@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 
 from fastapi import HTTPException
 
+from app.core.types import IST
 from app.db.mongo import db
 from app.db.utils import new_id, utcnow
 from app.services.notifications import notify
@@ -180,6 +181,9 @@ async def _complete(res: dict, by: str | None, note: str = "") -> dict:
     res = await _transition(res, ["accepted", "disputed"], "completed", by, note, {"completed_at": utcnow()})
     q = res["quantity"]
     await db.listings.update_one({"_id": res["listing_id"]}, {"$inc": {"reserved": -q, "collected": q}})
+    # Nothing left to give and nothing pending: the listing is finished, so it must stop showing as available.
+    await db.listings.update_one({"_id": res["listing_id"], "status": "active", "available": 0, "reserved": 0},
+                                 {"$set": {"status": "completed", "updated_at": utcnow()}})
     await db.users.update_one({"_id": res["owner_id"]}, {"$inc": {"stats.given": q, "stats.completed": 1}})
     await db.users.update_one({"_id": res["requester_id"]}, {"$inc": {"stats.received": q, "stats.completed": 1}})
     listing = await db.listings.find_one({"_id": res["listing_id"]}, {"category": 1, "mode": 1, "title": 1})
@@ -247,7 +251,7 @@ async def report_no_show(res: dict, user: dict) -> dict:
     _owner_only(res, user)
     earliest = await _no_show_earliest(res)
     if earliest > utcnow():
-        raise HTTPException(status_code=409, detail=f"You can report a no-show after {earliest:%d %b %H:%M} UTC")
+        raise HTTPException(status_code=409, detail=f"You can report a no-show after {earliest.astimezone(IST):%d %b, %I:%M %p} IST")
     res = await _transition(res, ["accepted"], "no_show", user["_id"])
     await _release(res)
     await _set_conversation_read_only(res["_id"])
