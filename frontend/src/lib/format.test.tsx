@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { formatDistance, label } from "./format";
+import { formatDistance, historyNote, label } from "./format";
 import { ListingCard } from "@/features/listings/ListingCard";
 import type { Listing } from "@/types";
 
@@ -26,5 +26,17 @@ describe("ListingCard", () => {
     expect(screen.getByText("Story books")).toBeInTheDocument();
     expect(screen.getByText("Indiranagar")).toBeInTheDocument();
     expect(screen.getByText("2 of 3 left")).toBeInTheDocument();
+  });
+});
+
+describe("historyNote", () => {
+  it("turns internal field names into plain words", () => {
+    expect(historyNote("owner_confirmed_at")).toBe("Giver confirmed the handover");
+    expect(historyNote("requester_confirmed_at")).toBe("Receiver confirmed the handover");
+  });
+  it("leaves real notes alone and handles empty values", () => {
+    expect(historyNote("I was there at 5")).toBe("I was there at 5");
+    expect(historyNote(null)).toBe("");
+    expect(historyNote(undefined)).toBe("");
   });
 });

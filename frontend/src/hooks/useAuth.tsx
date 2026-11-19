@@ -2,15 +2,16 @@ import { createContext, useCallback, useContext, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ApiError } from "@/lib/api";
-import { authApi, usersApi } from "@/services/api";
+import { authApi } from "@/services/api";
 import type { Me } from "@/types";
 
 type AuthCtx = { user: Me | null; loading: boolean; refresh: () => Promise<unknown>; logout: () => Promise<void> };
 const Ctx = createContext<AuthCtx | null>(null);
 
 async function fetchMe(): Promise<Me | null> {
+  // One call that always answers 200 (guests get user=null), so the browser console stays free of 401s.
   try {
-    return await usersApi.me();
+    return (await authApi.session()).user;
   } catch (e) {
     if (e instanceof ApiError && (e.status === 401 || e.status === 403)) return null;
     throw e;

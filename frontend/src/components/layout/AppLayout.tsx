@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Bell, Compass, HandHeart, MessageCircle, Plus, UserRound } from "lucide-react";
+import { Bell, ClipboardList, Compass, HandHeart, House, MessageCircle, Plus, UserRound } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { messagesApi, notificationsApi } from "@/services/api";
 import { Avatar } from "@/components/ui/Display";
@@ -67,6 +67,9 @@ function Header({ unread }: { unread: { notifications: number; messages: number 
           <NavLink to="/discover" className={link} data-testid="nav-discover">Discover</NavLink>
           <NavLink to="/wanted" className={link} data-testid="nav-wanted">Wanted</NavLink>
           <NavLink to="/impact" className={link} data-testid="nav-impact">Impact</NavLink>
+          {user
+            ? <NavLink to="/me" className={link} data-testid="nav-activity">My activity</NavLink>
+            : <NavLink to="/org" className={link} data-testid="nav-orgs">For organizations</NavLink>}
         </nav>
         <div className="flex items-center gap-2">
           {user ? (
@@ -95,13 +98,23 @@ function BottomNav({ messages }: { messages: number }) {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-cream/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden" data-testid="bottom-nav">
       <div className="flex items-end">
+        {!user && <NavLink to="/" end className={item} data-testid="bottom-home"><House className="h-5 w-5" />Home</NavLink>}
         <NavLink to="/discover" className={item}><Compass className="h-5 w-5" />Discover</NavLink>
-        <NavLink to="/wanted" className={item}><HandHeart className="h-5 w-5" />Wanted</NavLink>
+        {user && <NavLink to="/wanted" className={item}><HandHeart className="h-5 w-5" />Wanted</NavLink>}
         <Link to={user ? "/listings/new" : "/login?next=/listings/new"} className="flex flex-1 justify-center" aria-label="Give something" data-testid="bottom-give-btn">
           <span className="-mt-5 flex h-14 w-14 items-center justify-center rounded-full bg-olive text-cream ring-4 ring-cream"><Plus className="h-6 w-6" /></span>
         </Link>
-        <NavLink to="/messages" className={item}><span className="relative"><MessageCircle className="h-5 w-5" /><Dot count={messages} testId="bottom-messages-unread" /></span>Messages</NavLink>
-        <NavLink to={user ? "/me" : "/login"} className={item}><UserRound className="h-5 w-5" />{user ? "Me" : "Sign in"}</NavLink>
+        {user ? (
+          <>
+            <NavLink to="/me" className={item} data-testid="bottom-activity"><ClipboardList className="h-5 w-5" />Activity</NavLink>
+            <NavLink to="/messages" className={item}><span className="relative"><MessageCircle className="h-5 w-5" /><Dot count={messages} testId="bottom-messages-unread" /></span>Messages</NavLink>
+          </>
+        ) : (
+          <>
+            <NavLink to="/wanted" className={item}><HandHeart className="h-5 w-5" />Wanted</NavLink>
+            <NavLink to="/login" className={item} data-testid="bottom-signin"><UserRound className="h-5 w-5" />Sign in</NavLink>
+          </>
+        )}
       </div>
     </nav>
   );

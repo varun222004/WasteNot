@@ -5,7 +5,7 @@ import { MapPin, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import { reservationsApi } from "@/services/api";
 import { fileUrl } from "@/lib/api";
-import { formatDateTime, label, timeLeft } from "@/lib/format";
+import { formatDateTime, historyNote, label, timeLeft } from "@/lib/format";
 import { Button } from "@/components/ui/Button";
 import { Avatar, ErrorState, Skeleton } from "@/components/ui/Display";
 import { Modal } from "@/components/ui/Modal";
@@ -113,7 +113,7 @@ export default function ReservationPage() {
         <h2 className="text-xl text-olive">History</h2>
         <ol className="mt-4 space-y-3 border-l border-line pl-5">
           {r.history.map((h, i) => (
-            <li key={i} className="text-sm"><span className="font-medium">{label(h.kind)}</span><span className="text-muted"> · {formatDateTime(h.at)}</span>{h.note && <div className="text-muted">{h.note}</div>}</li>
+            <li key={i} className="text-sm"><span className="font-medium">{label(h.kind)}</span><span className="text-muted"> · {formatDateTime(h.at)}</span>{h.note && <div className="text-muted">{historyNote(h.note)}</div>}</li>
           ))}
         </ol>
       </section>

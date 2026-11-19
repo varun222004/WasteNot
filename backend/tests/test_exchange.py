@@ -36,7 +36,7 @@ def test_reservation_lifecycle_and_inventory(anon):
     assert act(giver, "confirm").json()["status"] == "completed"
     l = anon.get(f"/api/v1/listings/{listing['id']}").json()
     assert (l["available"], l["reserved"], l["collected"]) == (1, 0, 2)
-    assert l["status"] == "active"  # never auto-completed
+    assert l["status"] == "active"  # one item is still available, so the listing stays open
     assert giver.get("/api/v1/users/me").json()["stats"]["given"] == 2
 
 
